@@ -2,6 +2,14 @@
 
 A multi-agent AI chat application, simulation of grok heavy.
 
+## Example of working
+
+<img width="953" height="616" alt="{2844B5D9-00C8-4472-B35C-BC108F305B11}" src="https://github.com/user-attachments/assets/4e0788b7-6101-4d7b-b65e-fe5d7af7b917" /> (1 agents working, 1 agent finish work)
+
+<img width="1030" height="586" alt="{FC2EE2E0-55DB-4FFD-BE41-3308038E6113}" src="https://github.com/user-attachments/assets/31b2de07-71ac-4efd-b3b5-860cf3886648" /> (final response
+
+
+
 ## 🚀 Quick Start
 
 ### Prerequisites
