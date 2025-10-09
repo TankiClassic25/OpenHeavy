@@ -1,0 +1,22 @@
+# Core web framework
+Flask
+flask-socketio
+
+# AI/LLM integration
+openai
+
+# Data validation and settings
+pydantic
+pydantic-settings
+
+# Configuration and environment
+python-dotenv
+
+# HTTP requests
+requests
+
+# WebSocket support
+python-socketio
+
+# Additional utilities that might be needed
+typing-extensions
