@@ -2,7 +2,7 @@
 Dependency Injection container for OpenHeavy application.
 Manages service registration, resolution, and lifecycle.
 """
-from typing import Dict, Any, Type, Callable, Optional, TypeVar, Generic
+from typing import Dict, Any, Type, Callable, Optional, TypeVar, Generic, List
 from abc import ABC, abstractmethod
 import logging
 
@@ -238,8 +238,9 @@ def configure_services(container: Container) -> None:
     Args:
         container: Container to configure
     """
-    from config.settings import get_llm_config
+    from config.settings import get_agent_configs, get_llm_config
     from src.models.agent import AgentConfig
+    from src.core.agent import Agent
     from src.services.llm_service import LLMService
     from src.services.orchestrator import AgentOrchestrator
     from src.core.prompt_loader import FilePromptLoader, get_prompt_loader
@@ -277,11 +278,47 @@ def configure_services(container: Container) -> None:
         return LLMService(agent_config)
     
     container.register_transient(LLMService, factory=create_llm_service)
-    
+
     # Register other services
     container.register_transient(TaskPlanner, implementation=TaskPlanner)
-    container.register_transient(AnswerSynthesizer, implementation=AnswerSynthesizer)
-    container.register_singleton(AgentOrchestrator, implementation=AgentOrchestrator)
+
+    def create_synthesizer() -> AnswerSynthesizer:
+        llm_service = container.resolve(LLMService)
+        prompt_loader = container.resolve(FilePromptLoader)
+        return AnswerSynthesizer(llm_service, prompt_loader)
+
+    container.register_transient(AnswerSynthesizer, factory=create_synthesizer)
+
+    def create_agent_config(temperature: float, top_p: float) -> AgentConfig:
+        llm_config = get_llm_config()
+        return AgentConfig(
+            base_url=llm_config["base_url"],
+            api_key=llm_config["api_key"],
+            model=llm_config["model"],
+            search_url="",  # Not used directly by agent
+            max_search_results=5,
+            max_retries=llm_config["max_retries"],
+            temperature=temperature,
+            top_p=top_p,
+        )
+
+    def create_agent(agent_config: AgentConfig) -> Agent:
+        llm_service = container.resolve(LLMService)
+        return Agent(agent_config, llm_service)
+
+    def default_agent_configs_provider() -> List[Dict[str, float]]:
+        return get_agent_configs()
+
+    def create_orchestrator() -> AgentOrchestrator:
+        synthesizer = container.resolve(AnswerSynthesizer)
+        return AgentOrchestrator(
+            synthesizer=synthesizer,
+            agent_config_factory=create_agent_config,
+            agent_factory=create_agent,
+            default_agent_configs_provider=default_agent_configs_provider,
+        )
+
+    container.register_singleton(AgentOrchestrator, factory=create_orchestrator)
     
     logger.info("Service configuration completed")
 
@@ -294,5 +331,9 @@ def initialize_container() -> Container:
         Configured container
     """
     container = get_container()
-    configure_services(container)
+
+    # Avoid re-registering services if the container is already configured
+    if not container.get_registered_services():
+        configure_services(container)
+
     return container
