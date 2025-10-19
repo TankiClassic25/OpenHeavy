@@ -4,16 +4,12 @@ Extracts orchestration logic from app.py while preserving behavior.
 """
 import time
 import threading
-from typing import List, Dict, Any, Optional, Callable
+from typing import Callable, Dict, Any, List, Optional
 
-from src.core.interfaces import IAgentOrchestrator, ILLMService, IAnswerSynthesizer
-from src.models.agent import AgentResult, MultiAgentResult, AgentConfig
 from src.core.agent import Agent
-from src.core.synthesizer import AnswerSynthesizer
-from src.core.prompt_loader import get_prompt_loader
-from src.services.llm_service import LLMService
+from src.core.interfaces import IAgentOrchestrator, IAnswerSynthesizer
 from src.exceptions.agent import AgentError, SynthesisError
-from config.settings import get_agent_configs, get_llm_config
+from src.models.agent import AgentConfig, AgentResult, MultiAgentResult
 import logging
 
 
@@ -28,39 +24,33 @@ class AgentOrchestrator(IAgentOrchestrator):
     
     def __init__(
         self,
-        llm_service: Optional[ILLMService] = None,
-        synthesizer: Optional[IAnswerSynthesizer] = None
+        synthesizer: IAnswerSynthesizer,
+        agent_config_factory: Callable[[float, float], AgentConfig],
+        agent_factory: Callable[[AgentConfig], Agent],
+        default_agent_configs_provider: Callable[[], List[Dict[str, float]]],
     ):
         """
-        Initialize the agent orchestrator.
-        
+        Initialize the agent orchestrator with explicit dependencies.
+
         Args:
-            llm_service: Optional LLM service (will create default if None)
-            synthesizer: Optional synthesizer (will create default if None)
+            synthesizer: Synthesizer used to build final answers
+            agent_config_factory: Factory for creating agent configurations
+            agent_factory: Factory for creating ready-to-run agents
+            default_agent_configs_provider: Callable returning default agent settings
         """
-        # Create default LLM service if not provided
-        if llm_service is None:
-            llm_config = get_llm_config()
-            default_config = AgentConfig(
-                base_url=llm_config["base_url"],
-                api_key=llm_config["api_key"],
-                model=llm_config["model"],
-                search_url="",  # Not used by orchestrator
-                max_search_results=5,
-                max_retries=llm_config["max_retries"],
-                temperature=0.3,  # Default for orchestrator
-                top_p=0.9
-            )
-            llm_service = LLMService(default_config)
-        
-        self.llm_service = llm_service
-        
-        # Create default synthesizer if not provided
         if synthesizer is None:
-            prompt_loader = get_prompt_loader()
-            synthesizer = AnswerSynthesizer(llm_service, prompt_loader)
-        
+            raise ValueError("synthesizer dependency is required")
+        if agent_config_factory is None:
+            raise ValueError("agent_config_factory dependency is required")
+        if agent_factory is None:
+            raise ValueError("agent_factory dependency is required")
+        if default_agent_configs_provider is None:
+            raise ValueError("default_agent_configs_provider dependency is required")
+
         self.synthesizer = synthesizer
+        self._agent_config_factory = agent_config_factory
+        self._agent_factory = agent_factory
+        self._agent_configs_provider = default_agent_configs_provider
         self.agent_results: Dict[str, AgentResult] = {}
     
     def run_agents(
@@ -87,7 +77,7 @@ class AgentOrchestrator(IAgentOrchestrator):
         
         # Use default agent configs if not provided
         if agent_configs is None:
-            agent_configs = get_agent_configs()
+            agent_configs = self._agent_configs_provider()
         
         logger.info(f"Starting orchestration with {len(agent_configs)} agents")
         
@@ -303,24 +293,10 @@ class AgentOrchestrator(IAgentOrchestrator):
             first_agent_plan_ready: Threading event for coordination
         """
         try:
-            # Create agent configuration
-            llm_config = get_llm_config()
-            agent_config = AgentConfig(
-                base_url=llm_config["base_url"],
-                api_key=llm_config["api_key"],
-                model=llm_config["model"],
-                search_url="",  # Not used directly by agent
-                max_search_results=5,
-                max_retries=llm_config["max_retries"],
-                temperature=temperature,
-                top_p=top_p
-            )
-            
-            # Create LLM service for this agent
-            llm_service = LLMService(agent_config)
-            
+            agent_config = self._agent_config_factory(temperature, top_p)
+
             # Create and run agent
-            agent = Agent(agent_config, llm_service)
+            agent = self._agent_factory(agent_config)
             result = agent.run(
                 user_request,
                 agent_id,
