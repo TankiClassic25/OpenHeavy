@@ -3,18 +3,28 @@ Flask application factory.
 Creates and configures the Flask application with all extensions.
 """
 import os
+from typing import Optional
+
 from flask import Flask, render_template
 from flask_socketio import SocketIO
+
 from config.settings import get_settings
-from src.utils.error_handlers import register_flask_error_handlers, register_socketio_error_handlers
-from src.container import initialize_container
+from src.container import Container, initialize_container
+from src.utils.error_handlers import (
+    register_flask_error_handlers,
+    register_socketio_error_handlers,
+)
 import logging
 
 
 logger = logging.getLogger(__name__)
 
 
-def create_app(config_override: dict = None) -> tuple[Flask, SocketIO]:
+def create_app(
+    config_override: Optional[dict] = None,
+    *,
+    container: Optional[Container] = None,
+) -> tuple[Flask, SocketIO]:
     """
     Create and configure Flask application with SocketIO.
     
@@ -41,7 +51,8 @@ def create_app(config_override: dict = None) -> tuple[Flask, SocketIO]:
     logger.info(f"Created Flask app in {settings.ENVIRONMENT} mode")
     
     # Initialize dependency injection container
-    container = initialize_container()
+    if container is None:
+        container = initialize_container()
     
     # Store container in app for access in routes
     app.container = container
